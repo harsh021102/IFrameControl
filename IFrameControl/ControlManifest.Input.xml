@@ -4,6 +4,20 @@
     <property name="stringProperty" display-name-key="stringProperty_Display_Key" description-key="stringProperty_Desc_Key" of-type="SingleLine.Text" usage="bound" required="true" />
     <property name="latitudeValue" display-name-key="Bing_Maps_Latitude_Value" description-key="latitude" of-type="FP" usage="bound" required="true" />
     <property name="longitudeValue" display-name-key="Bing_Maps_Longitude_Value" description-key="longitude" of-type="FP" usage="bound" required="true" />
+    <property name="templateId"
+          display-name-key="TemplateId_Display_Key"
+          description-key="TemplateId_Desc_Key"
+          of-type="SingleLine.Text"
+          usage="input"
+          required="true" />
+
+<property name="jwt"
+          display-name-key="Jwt_Display_Key"
+          description-key="Jwt_Desc_Key"
+          of-type="SingleLine.Text"
+          usage="input"
+          required="true" />
+
     <resources>
       <code path="index.ts" order="1" />
       <css path="css/IFrameControl.css" order="2" />

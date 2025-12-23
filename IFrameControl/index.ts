@@ -1,114 +1,209 @@
-/*
-	This file is part of the Microsoft PowerApps code samples.
-	Copyright (C) Microsoft Corporation.  All rights reserved.
-	This source code is intended only as a supplement to Microsoft Development Tools and/or
-	on-line documentation.  See these other materials for detailed information regarding
-	Microsoft code samples.
-
-	THIS CODE AND INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER
-	EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
-	MERCHANTABILITY AND/OR FITNESS FOR A PARTICULAR PURPOSE.
- */
-
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
 
-export class IFrameControl implements ComponentFramework.StandardControl<IInputs, IOutputs> {
-	// Reference to Bing Map IFrame HTMLElement
-	private _bingMapIFrame: HTMLElement;
+/* ================================
+   Firma Editor Type Definitions
+================================ */
 
-	// Reference to the control container HTMLDivElement
-	// This element contains all elements of our custom control example
-	private _container: HTMLDivElement;
+interface IFirmaTemplateEditorInstance {
+  destroy(): void;
+}
 
-	// Flag if control view has been rendered
-	private _controlViewRendered: boolean;
+interface IFirmaTemplateEditorOptions {
+  container: HTMLElement;
+  jwt: string;
+  templateId: string;
+  theme?: "light" | "dark";
+  readOnly?: boolean;
+  width?: string;
+  height?: string;
+  onSave?: (data: unknown) => void;
+  onLoad?: (template: unknown) => void;
+  onError?: (error: unknown) => void;
+}
 
-	/**
-	 * Used to initialize the control instance. Controls can kick off remote server calls and other initialization actions here.
-	 * Data-set values are not initialized here, use updateView.
-	 * @param context The entire property bag available to control via Context Object; It contains values as set up by the customizer mapped to property names defined in the manifest, as well as utility functions.
-	 * @param notifyOutputChanged A callback method to alert the framework that the control has new outputs ready to be retrieved asynchronously.
-	 * @param state A piece of data that persists in one session for a single user. Can be set at any point in a controls life cycle by calling 'setControlState' in the Mode interface.
-	 * @param container If a control is marked control-type='standard', it will receive an empty div element within which it can render its content.
-	 */
-	public init(
-		context: ComponentFramework.Context<IInputs>,
-		notifyOutputChanged: () => void,
-		state: ComponentFramework.Dictionary,
-		container: HTMLDivElement
-	): void {
-		this._container = container;
-		this._controlViewRendered = false;
-	}
+type FirmaTemplateEditorConstructor = new (
+  options: IFirmaTemplateEditorOptions
+) => IFirmaTemplateEditorInstance;
 
-	/**
-	 * Called when any value in the property bag has changed. This includes field values, data-sets, global values such as container height and width, offline status, control metadata values such as label, visible, etc.
-	 * @param context The entire property bag available to control via Context Object; It contains values as set up by the customizer mapped to names defined in the manifest, as well as utility functions
-	 */
-	public updateView(context: ComponentFramework.Context<IInputs>): void {
-		if (!this._controlViewRendered) {
-			this._controlViewRendered = true;
-			this.renderBingMapIFrame();
-		}
+/* ================================
+   PCF Control
+================================ */
 
-		const latitude = context.parameters.latitudeValue.raw;
-		const longitude = context.parameters.longitudeValue.raw;
-		if (latitude && longitude) {
-			this.updateBingMapURL(latitude, longitude);
-		}
-	}
+export class IFrameControl
+  implements ComponentFramework.StandardControl<IInputs, IOutputs> {
 
-	/**
-	 * Render IFrame HTML Element that hosts the Bing Map and appends the IFrame to the control container
-	 */
-	private renderBingMapIFrame(): void {
-		this._bingMapIFrame = this.createIFrameElement();
-		this._container.appendChild(this._bingMapIFrame);
-	}
+  private _context?: ComponentFramework.Context<IInputs>;
+  private _container!: HTMLDivElement;
+  private _editorContainer!: HTMLDivElement;
+  private _editorInstance?: IFirmaTemplateEditorInstance;
+  private _scriptLoaded = false;
+  private _currentTemplateId?: string;
+  private _currentJwt?: string;
 
-	/**
-	 * Updates the URL of the Bing Map IFrame to display the updated lat/long coordinates
-	 * @param latitude : latitude of center point of Bing map
-	 * @param longitude : longitude of center point of Bing map
-	 */
-	private updateBingMapURL(latitude: number, longitude: number): void {
-		// Bing Map API:
-		// https://learn.microsoft.com/bingmaps/articles/create-a-custom-map-url
+  /* ================================
+     INIT
+  ================================ */
 
-		// Provide bing map query string parameters to format and style map view
-		const bingMapUrlPrefix = "https://www.bing.com/maps/embed?h=400&w=300&cp=";
-		const bingMapUrlPostfix = "&lvl=12&typ=d&sty=o&src=SHELL&FORM=MBEDV8";
+  public init(
+    context: ComponentFramework.Context<IInputs>,
+    notifyOutputChanged: () => void,
+    state: ComponentFramework.Dictionary,
+    container: HTMLDivElement
+  ): void {
+    this._context = context;
+    this._container = container;
 
-		// Build the entire URL with the user provided latitude and longitude
-		const iFrameSrc = `${bingMapUrlPrefix + latitude}~${longitude}${bingMapUrlPostfix}`;
+    this._editorContainer = document.createElement("div");
+    this._editorContainer.style.width = "100%";
+    this._editorContainer.style.height = "100%";
+    this._editorContainer.style.minHeight = "300px";
 
-		// Update the IFrame to point to the updated URL
-		this._bingMapIFrame.setAttribute("src", iFrameSrc);
-	}
+    this._container.appendChild(this._editorContainer);
 
-	/**
-	 * Helper method to create an IFrame HTML Element
-	 */
-	private createIFrameElement(): HTMLElement {
-		const iFrameElement: HTMLElement = document.createElement("iframe");
-		iFrameElement.setAttribute("class", "SampleControl_IFrame");
-		return iFrameElement;
-	}
+    this.loadFirmaScript();
+  }
 
-	/**
-	 * It is called by the framework prior to a control receiving new data.
-	 * @returns an object based on nomenclature defined in manifest, expecting object[s] for property marked as "bound" or "output"
-	 */
-	public getOutputs(): IOutputs {
-		// no-op: method not leveraged by this example custom control
-		return {};
-	}
+  /* ================================
+     UPDATE VIEW
+  ================================ */
 
-	/**
-	 * Called when the control is to be removed from the DOM tree. Controls should use this call for cleanup.
-	 * i.e. cancelling any pending remote calls, removing listeners, etc.
-	 */
-	public destroy(): void {
-		// no-op: method not leveraged by this example custom control
-	}
+  public updateView(context: ComponentFramework.Context<IInputs>): void {
+    this._context = context;
+
+    const templateId = context.parameters.templateId?.raw ?? "";
+    const jwt = context.parameters.jwt?.raw ?? "";
+
+    if (!this._scriptLoaded || !templateId || !jwt) {
+      return;
+    }
+
+    if (
+      this._editorInstance &&
+      templateId === this._currentTemplateId &&
+      jwt === this._currentJwt
+    ) {
+      return;
+    }
+
+    this._currentTemplateId = templateId;
+    this._currentJwt = jwt;
+
+    this.initializeEditor(templateId, jwt);
+  }
+
+  /* ================================
+     SCRIPT LOADER
+  ================================ */
+
+  private loadFirmaScript(): void {
+    if (this.getFirmaConstructor()) {
+      this._scriptLoaded = true;
+      this.tryInitialize();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src =
+      "https://api.firma.dev/functions/v1/embed-proxy/template-editor.js";
+    script.async = true;
+
+    script.onload = () => {
+      this._scriptLoaded = true;
+      this.tryInitialize();
+    };
+
+    script.onerror = () => {
+      console.error("Failed to load Firma Template Editor script");
+    };
+
+    document.body.appendChild(script);
+  }
+
+  /* ================================
+     SAFE ACCESSOR
+  ================================ */
+
+  private getFirmaConstructor(): FirmaTemplateEditorConstructor | undefined {
+    const win = window as unknown as {
+      FirmaTemplateEditor?: FirmaTemplateEditorConstructor;
+    };
+
+    return win.FirmaTemplateEditor;
+  }
+
+  /* ================================
+     INITIALIZE (SAFE)
+  ================================ */
+
+  private tryInitialize(): void {
+    if (!this._context) return;
+
+    const templateId = this._context.parameters.templateId?.raw ?? "";
+    const jwt = this._context.parameters.jwt?.raw ?? "";
+
+    if (!templateId || !jwt || !this._scriptLoaded) {
+      return;
+    }
+
+    this.initializeEditor(templateId, jwt);
+  }
+
+  /* ================================
+     CREATE EDITOR
+  ================================ */
+
+  private initializeEditor(templateId: string, jwt: string): void {
+    if (this._editorInstance) {
+      this._editorInstance.destroy();
+    }
+
+    const allocatedHeight =
+      this._context?.mode.allocatedHeight && this._context.mode.allocatedHeight > 0
+        ? `${this._context.mode.allocatedHeight}px`
+        : "600px";
+
+    this._editorContainer.innerHTML = "";
+    this._editorContainer.style.height = allocatedHeight;
+
+    const FirmaEditor = this.getFirmaConstructor();
+
+    if (!FirmaEditor) {
+      console.error("FirmaTemplateEditor not available");
+      return;
+    }
+
+    this._editorInstance = new FirmaEditor({
+      container: this._editorContainer,
+      jwt,
+      templateId,
+      theme: "dark",
+      readOnly: false,
+      width: "100%",
+      height: allocatedHeight,
+      onSave: (data: unknown) => console.log("Saved:", data),
+      onLoad: (template: unknown) => console.log("Loaded:", template),
+      onError: (error: unknown) => console.error("Firma Error:", error),
+    });
+  }
+
+  /* ================================
+     OUTPUTS
+  ================================ */
+
+  public getOutputs(): IOutputs {
+    return {};
+  }
+
+  /* ================================
+     DESTROY
+  ================================ */
+
+  public destroy(): void {
+    if (this._editorInstance) {
+      this._editorInstance.destroy();
+      this._editorInstance = undefined;
+    }
+
+    this._container.innerHTML = "";
+  }
 }
