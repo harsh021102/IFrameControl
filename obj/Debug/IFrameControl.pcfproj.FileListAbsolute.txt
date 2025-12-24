@@ -1,0 +1,2 @@
+C:\IFrameControl\obj\Debug\IFrameControl.pcfproj.AssemblyReference.cache
+C:\IFrameControl\obj\Debug\IFrameControl.pcfproj.CoreCompileInputs.cache

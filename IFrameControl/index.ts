@@ -32,18 +32,20 @@ type FirmaTemplateEditorConstructor = new (
 export class IFrameControl
   implements ComponentFramework.StandardControl<IInputs, IOutputs> {
 
-  private _context?: ComponentFramework.Context<IInputs>;
+  private _context!: ComponentFramework.Context<IInputs>;
   private _container!: HTMLDivElement;
   private _editorContainer!: HTMLDivElement;
   private _editorInstance?: IFirmaTemplateEditorInstance;
   private _scriptLoaded = false;
+
   private _currentTemplateId?: string;
   private _currentJwt?: string;
+  private _currentWidth?: number;
+  private _currentHeight?: number;
 
   /* ================================
      INIT
   ================================ */
-
   public init(
     context: ComponentFramework.Context<IInputs>,
     notifyOutputChanged: () => void,
@@ -53,10 +55,15 @@ export class IFrameControl
     this._context = context;
     this._container = container;
 
+    this._container.style.width = "100%";
+    this._container.style.height = "100%";
+    this._container.style.overflow = "auto";
+
     this._editorContainer = document.createElement("div");
     this._editorContainer.style.width = "100%";
     this._editorContainer.style.height = "100%";
     this._editorContainer.style.minHeight = "300px";
+    this._editorContainer.style.overflow = "visible";
 
     this._container.appendChild(this._editorContainer);
 
@@ -66,35 +73,40 @@ export class IFrameControl
   /* ================================
      UPDATE VIEW
   ================================ */
-
   public updateView(context: ComponentFramework.Context<IInputs>): void {
     this._context = context;
 
     const templateId = context.parameters.templateId?.raw ?? "";
     const jwt = context.parameters.jwt?.raw ?? "";
 
-    if (!this._scriptLoaded || !templateId || !jwt) {
+    const width = context.mode.allocatedWidth;
+    const height = context.mode.allocatedHeight;
+
+    if (!this._scriptLoaded || !templateId || !jwt || !width || !height) {
       return;
     }
 
-    if (
-      this._editorInstance &&
-      templateId === this._currentTemplateId &&
-      jwt === this._currentJwt
-    ) {
+    const sizeChanged =
+      width !== this._currentWidth || height !== this._currentHeight;
+
+    const dataChanged =
+      templateId !== this._currentTemplateId || jwt !== this._currentJwt;
+
+    if (this._editorInstance && !sizeChanged && !dataChanged) {
       return;
     }
 
     this._currentTemplateId = templateId;
     this._currentJwt = jwt;
+    this._currentWidth = width;
+    this._currentHeight = height;
 
-    this.initializeEditor(templateId, jwt);
+    this.initializeEditor(templateId, jwt, width, height);
   }
 
   /* ================================
      SCRIPT LOADER
   ================================ */
-
   private loadFirmaScript(): void {
     if (this.getFirmaConstructor()) {
       this._scriptLoaded = true;
@@ -122,51 +134,47 @@ export class IFrameControl
   /* ================================
      SAFE ACCESSOR
   ================================ */
-
   private getFirmaConstructor(): FirmaTemplateEditorConstructor | undefined {
-    const win = window as unknown as {
-      FirmaTemplateEditor?: FirmaTemplateEditorConstructor;
-    };
-
-    return win.FirmaTemplateEditor;
+    // Use type-safe window access without any `any`
+    return (window as Window & { FirmaTemplateEditor?: FirmaTemplateEditorConstructor }).FirmaTemplateEditor;
   }
 
   /* ================================
-     INITIALIZE (SAFE)
+     TRY INITIALIZE AFTER SCRIPT LOAD
   ================================ */
-
   private tryInitialize(): void {
-    if (!this._context) return;
-
     const templateId = this._context.parameters.templateId?.raw ?? "";
     const jwt = this._context.parameters.jwt?.raw ?? "";
 
-    if (!templateId || !jwt || !this._scriptLoaded) {
+    const width = this._context.mode.allocatedWidth;
+    const height = this._context.mode.allocatedHeight;
+
+    if (!templateId || !jwt || !width || !height || !this._scriptLoaded) {
       return;
     }
 
-    this.initializeEditor(templateId, jwt);
+    this.initializeEditor(templateId, jwt, width, height);
   }
 
   /* ================================
-     CREATE EDITOR
+     CREATE / RESIZE EDITOR
   ================================ */
-
-  private initializeEditor(templateId: string, jwt: string): void {
+  private initializeEditor(
+    templateId: string,
+    jwt: string,
+    width: number,
+    height: number
+  ): void {
     if (this._editorInstance) {
       this._editorInstance.destroy();
+      this._editorInstance = undefined;
     }
 
-    const allocatedHeight =
-      this._context?.mode.allocatedHeight && this._context.mode.allocatedHeight > 0
-        ? `${this._context.mode.allocatedHeight}px`
-        : "600px";
-
     this._editorContainer.innerHTML = "";
-    this._editorContainer.style.height = allocatedHeight;
+    this._editorContainer.style.width = "100%";
+    this._editorContainer.style.height = "100%";
 
     const FirmaEditor = this.getFirmaConstructor();
-
     if (!FirmaEditor) {
       console.error("FirmaTemplateEditor not available");
       return;
@@ -179,17 +187,16 @@ export class IFrameControl
       theme: "dark",
       readOnly: false,
       width: "100%",
-      height: allocatedHeight,
-      onSave: (data: unknown) => console.log("Saved:", data),
-      onLoad: (template: unknown) => console.log("Loaded:", template),
-      onError: (error: unknown) => console.error("Firma Error:", error),
+      height: "100%",
+      onSave: (data) => console.log("Saved:", data),
+      onLoad: (template) => console.log("Loaded:", template),
+      onError: (error) => console.error("Firma Error:", error),
     });
   }
 
   /* ================================
      OUTPUTS
   ================================ */
-
   public getOutputs(): IOutputs {
     return {};
   }
@@ -197,13 +204,11 @@ export class IFrameControl
   /* ================================
      DESTROY
   ================================ */
-
   public destroy(): void {
     if (this._editorInstance) {
       this._editorInstance.destroy();
       this._editorInstance = undefined;
     }
-
     this._container.innerHTML = "";
   }
 }
